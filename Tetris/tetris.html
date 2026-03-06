@@ -1,1 +1,265 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Tetris</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Nunito:wght@700;900&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    background: #0d0d2e;
+    background-image: radial-gradient(ellipse at 30% 0%, #12124a 0%, #0d0d2e 60%);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    min-height: 100vh; font-family: 'Nunito', sans-serif; color: #fff;
+    padding: 14px 10px; overflow: hidden;
+  }
+  h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px; color: #06b6d4;
+    text-shadow: 0 0 20px #06b6d4;
+    margin-bottom: 10px; letter-spacing: 2px;
+  }
+  #main { display: flex; gap: 12px; align-items: flex-start; }
+  canvas {
+    border: 2px solid rgba(6,182,212,0.4);
+    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(6,182,212,0.2);
+  }
+  #side {
+    display: flex; flex-direction: column; gap: 10px; min-width: 80px;
+  }
+  .info-box {
+    background: rgba(6,182,212,0.08);
+    border: 1px solid rgba(6,182,212,0.25);
+    border-radius: 10px; padding: 8px 10px; text-align: center;
+  }
+  .info-label { font-size: 9px; color: #6b7280; margin-bottom: 4px; }
+  .info-val { font-family: 'Press Start 2P', monospace; font-size: 12px; color: #06b6d4; }
+  #next-canvas { display: block; margin: 0 auto; }
 
+  #controls {
+    display: grid;
+    grid-template-columns: 52px 52px 52px;
+    grid-template-rows: 52px 52px;
+    gap: 5px; margin-top: 12px;
+  }
+  .ctrl-btn {
+    background: rgba(6,182,212,0.12);
+    border: 1px solid rgba(6,182,212,0.3);
+    border-radius: 12px; color: #06b6d4;
+    font-size: 22px; display: flex;
+    align-items: center; justify-content: center;
+    cursor: pointer; user-select: none;
+    transition: background 0.1s;
+  }
+  .ctrl-btn:active { background: rgba(6,182,212,0.4); }
+  .ctrl-btn.rotate { font-size: 14px; }
+  .ctrl-btn.drop { font-size: 14px; }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(13,13,46,0.93);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 14px; z-index: 10;
+  }
+  #overlay h2 { font-family: 'Press Start 2P', monospace; font-size: 16px; color: #06b6d4; text-shadow: 0 0 20px #06b6d4; text-align:center; }
+  #overlay p { color: #9ca3af; font-size: 12px; text-align: center; line-height: 1.7; }
+  .final { font-family: 'Press Start 2P', monospace; font-size: 14px; color: #fff; }
+  .btn {
+    background: #06b6d4; color: #000; font-family: 'Press Start 2P', monospace;
+    font-size: 10px; border: none; border-radius: 10px;
+    padding: 14px 28px; cursor: pointer;
+    box-shadow: 0 0 20px rgba(6,182,212,0.5);
+  }
+  .btn:active { transform: scale(0.95); }
+</style>
+</head>
+<body>
+<h1>🟦 TETRIS</h1>
+<div id="main">
+  <canvas id="c" width="200" height="400"></canvas>
+  <div id="side">
+    <div class="info-box"><div class="info-label">BALL</div><div class="info-val" id="score">0</div></div>
+    <div class="info-box"><div class="info-label">QATOR</div><div class="info-val" id="lines">0</div></div>
+    <div class="info-box"><div class="info-label">DARAJA</div><div class="info-val" id="level">1</div></div>
+    <div class="info-box">
+      <div class="info-label">KEYINGI</div>
+      <canvas id="next-canvas" width="60" height="60"></canvas>
+    </div>
+  </div>
+</div>
+<div id="controls">
+  <div class="ctrl-btn" id="btnLeft">◀</div>
+  <div class="ctrl-btn rotate" id="btnRotate">🔄</div>
+  <div class="ctrl-btn" id="btnRight">▶</div>
+  <div style="grid-column:1/-1; display:flex; gap:5px;">
+    <div class="ctrl-btn" id="btnDown" style="flex:1;">▼</div>
+    <div class="ctrl-btn drop" id="btnDrop" style="flex:1;">⬇⬇</div>
+  </div>
+</div>
+
+<div id="overlay">
+  <h2 id="ov-title">🟦 TETRIS</h2>
+  <p id="ov-desc">Bloklarni to'g'ri joylashtir!<br>Qatorni to'ldirsa yo'qoladi!</p>
+  <div class="final" id="final-score" style="display:none"></div>
+  <button class="btn" id="startBtn">BOSHLASH</button>
+</div>
+
+<script>
+try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e){}
+
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const nc = document.getElementById('next-canvas'), nctx = nc.getContext('2d');
+const CELL=20, COLS=10, ROWS=20;
+
+const PIECES = [
+  { shape:[[1,1,1,1]], color:'#06b6d4' },
+  { shape:[[1,1],[1,1]], color:'#f59e0b' },
+  { shape:[[0,1,0],[1,1,1]], color:'#8b5cf6' },
+  { shape:[[1,0],[1,0],[1,1]], color:'#f97316' },
+  { shape:[[0,1],[0,1],[1,1]], color:'#3b82f6' },
+  { shape:[[1,1,0],[0,1,1]], color:'#10b981' },
+  { shape:[[0,1,1],[1,1,0]], color:'#ef4444' },
+];
+
+let board, piece, next, score, lines, level, running, dropInt, tx, ty;
+
+function newBoard() {
+  return Array.from({length:ROWS},()=>Array(COLS).fill(0));
+}
+
+function randomPiece() {
+  const p = PIECES[Math.floor(Math.random()*PIECES.length)];
+  return { shape:[...p.shape.map(r=>[...r])], color:p.color, x:Math.floor(COLS/2)-Math.floor(p.shape[0].length/2), y:0 };
+}
+
+function rotate(shape) {
+  return shape[0].map((_,i)=>shape.map(r=>r[i]).reverse());
+}
+
+function valid(s,x,y) {
+  return s.every((row,dy)=>row.every((v,dx)=>!v||(x+dx>=0&&x+dx<COLS&&y+dy<ROWS&&(y+dy<0||!board[y+dy][x+dx]))));
+}
+
+function place() {
+  piece.shape.forEach((row,dy)=>row.forEach((v,dx)=>{ if(v&&piece.y+dy>=0) board[piece.y+dy][piece.x+dx]=piece.color; }));
+  let cleared=0;
+  for(let r=ROWS-1;r>=0;){
+    if(board[r].every(c=>c)){ board.splice(r,1); board.unshift(Array(COLS).fill(0)); cleared++; } else r--;
+  }
+  if(cleared){
+    lines+=cleared; score+=[0,100,300,500,800][cleared]*level;
+    level=Math.floor(lines/10)+1;
+    document.getElementById('score').textContent=score;
+    document.getElementById('lines').textContent=lines;
+    document.getElementById('level').textContent=level;
+    clearInterval(dropInt); dropInt=setInterval(drop,Math.max(100,500-level*40));
+  }
+  piece=next; next=randomPiece();
+  drawNext();
+  if(!valid(piece.shape,piece.x,piece.y)) { gameOver(); }
+}
+
+function drop() {
+  if(valid(piece.shape,piece.x,piece.y+1)) piece.y++;
+  else place();
+  draw();
+}
+
+function hardDrop() {
+  while(valid(piece.shape,piece.x,piece.y+1)) piece.y++;
+  place(); draw();
+}
+
+function draw() {
+  ctx.fillStyle='#0d0d2e'; ctx.fillRect(0,0,c.width,c.height);
+  // grid
+  ctx.strokeStyle='rgba(6,182,212,0.05)'; ctx.lineWidth=0.5;
+  for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,c.height);ctx.stroke();}
+  for(let i=0;i<=ROWS;i++){ctx.beginPath();ctx.moveTo(0,i*CELL);ctx.lineTo(c.width,i*CELL);ctx.stroke();}
+  // board
+  board.forEach((row,y)=>row.forEach((col,x)=>{ if(col){ drawCell(ctx,x,y,col); } }));
+  // ghost
+  let gy=piece.y;
+  while(valid(piece.shape,piece.x,gy+1)) gy++;
+  piece.shape.forEach((row,dy)=>row.forEach((v,dx)=>{ if(v) drawCell(ctx,piece.x+dx,gy+dy,piece.color,0.2); }));
+  // piece
+  piece.shape.forEach((row,dy)=>row.forEach((v,dx)=>{ if(v) drawCell(ctx,piece.x+dx,piece.y+dy,piece.color); }));
+}
+
+function drawCell(c2,x,y,col,alpha=1) {
+  c2.globalAlpha=alpha;
+  c2.fillStyle=col;
+  c2.beginPath();
+  c2.roundRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2,3);
+  c2.fill();
+  c2.globalAlpha=0.4;
+  c2.fillStyle='#fff';
+  c2.fillRect(x*CELL+2,y*CELL+2,4,4);
+  c2.globalAlpha=1;
+}
+
+function drawNext() {
+  nctx.fillStyle='transparent'; nctx.clearRect(0,0,60,60);
+  const s=next.shape, ox=Math.floor((3-s[0].length)/2), oy=Math.floor((3-s.length)/2);
+  s.forEach((row,dy)=>row.forEach((v,dx)=>{ if(v) drawCell(nctx,ox+dx,oy+dy,next.color); }));
+}
+
+function gameOver() {
+  clearInterval(dropInt); running=false;
+  const ov=document.getElementById('overlay');
+  document.getElementById('ov-title').textContent="💀 O'YIN TUGADI";
+  document.getElementById('final-score').textContent='BALL: '+score;
+  document.getElementById('final-score').style.display='block';
+  document.getElementById('ov-desc').textContent='Yana urinib ko\'ring!';
+  document.getElementById('startBtn').textContent='QAYTA';
+  ov.style.display='flex';
+}
+
+function startGame() {
+  board=newBoard(); score=0; lines=0; level=1;
+  piece=randomPiece(); next=randomPiece();
+  document.getElementById('score').textContent=0;
+  document.getElementById('lines').textContent=0;
+  document.getElementById('level').textContent=1;
+  document.getElementById('final-score').style.display='none';
+  document.getElementById('overlay').style.display='none';
+  running=true; clearInterval(dropInt); dropInt=setInterval(drop,500);
+  drawNext(); draw();
+}
+
+document.getElementById('startBtn').addEventListener('click',startGame);
+
+document.addEventListener('keydown',e=>{
+  if(!running) return;
+  if(e.key==='ArrowLeft'&&valid(piece.shape,piece.x-1,piece.y)){piece.x--;draw();}
+  if(e.key==='ArrowRight'&&valid(piece.shape,piece.x+1,piece.y)){piece.x++;draw();}
+  if(e.key==='ArrowDown'){drop();}
+  if(e.key==='ArrowUp'){ const r=rotate(piece.shape); if(valid(r,piece.x,piece.y)){piece.shape=r;draw();} }
+  if(e.key===' '){hardDrop();}
+});
+
+document.getElementById('btnLeft').addEventListener('click',()=>{ if(running&&valid(piece.shape,piece.x-1,piece.y)){piece.x--;draw();} });
+document.getElementById('btnRight').addEventListener('click',()=>{ if(running&&valid(piece.shape,piece.x+1,piece.y)){piece.x++;draw();} });
+document.getElementById('btnDown').addEventListener('click',()=>{ if(running) drop(); });
+document.getElementById('btnRotate').addEventListener('click',()=>{ if(!running)return; const r=rotate(piece.shape); if(valid(r,piece.x,piece.y)){piece.shape=r;draw();} });
+document.getElementById('btnDrop').addEventListener('click',()=>{ if(running) hardDrop(); });
+
+c.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
+c.addEventListener('touchend',e=>{
+  if(!running) return;
+  const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
+  if(Math.abs(dx)>Math.abs(dy)){
+    if(dx>15&&valid(piece.shape,piece.x+1,piece.y)){piece.x++;draw();}
+    if(dx<-15&&valid(piece.shape,piece.x-1,piece.y)){piece.x--;draw();}
+  } else {
+    if(dy>15) drop();
+    if(dy<-15){ const r=rotate(piece.shape); if(valid(r,piece.x,piece.y)){piece.shape=r;draw();} }
+  }
+},{passive:true});
+</script>
+</body>
+</html>
